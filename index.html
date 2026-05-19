@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SenseNova U1 Fast — 生图工作台</title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --surface: rgba(255,255,255,0.04);
+    --surface-hover: rgba(255,255,255,0.07);
+    --glass: rgba(255,255,255,0.06);
+    --glass-border: rgba(255,255,255,0.08);
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --accent: #38bdf8;
+    --accent-glow: rgba(56,189,248,0.15);
+    --danger: #ef4444;
+    --success: #22c55e;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  /* 背景装饰 */
+  body::before {
+    content: '';
+    position: fixed; top: -40%; left: -20%;
+    width: 80vw; height: 80vw;
+    background: radial-gradient(circle, rgba(56,189,248,0.06) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed; bottom: -30%; right: -10%;
+    width: 60vw; height: 60vw;
+    background: radial-gradient(circle, rgba(139,92,246,0.04) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+
+  /* 顶栏 */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 0; margin-bottom: 24px;
+  }
+  .header-title {
+    font-size: 20px; font-weight: 700;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .header-title .badge {
+    font-size: 11px; font-weight: 600;
+    padding: 3px 8px; border-radius: 6px;
+    background: var(--accent-glow); color: var(--accent);
+    border: 1px solid rgba(56,189,248,0.2);
+  }
+  .quota-info {
+    font-size: 13px; color: var(--text-dim);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .quota-info .dot { width:6px; height:6px; border-radius:50%; background:var(--success); }
+
+  /* 主布局 */
+  .main { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+
+  /* 毛玻璃面板 */
+  .panel {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  /* 左侧参数面板 */
+  .params-panel { padding: 20px; }
+  .params-panel h3 {
+    font-size: 14px; font-weight: 600; margin-bottom: 16px;
+    color: var(--text-dim); letter-spacing: 0.5px;
+  }
+  .param-group { margin-bottom: 16px; }
+  .param-group:last-child { margin-bottom: 0; }
+  .param-label {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--text-dim); margin-bottom: 6px;
+  }
+  .param-label .hint { font-size: 11px; color: rgba(100,116,139,0.6); }
+
+  /* API Key 输入 */
+  .key-input-wrap {
+    position: relative; display: flex; align-items: center;
+  }
+  .key-input-wrap input {
+    width: 100%; padding: 10px 36px 10px 12px;
+    background: var(--surface); border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-size: 13px; outline: none; transition: border-color .2s;
+  }
+  .key-input-wrap input:focus { border-color: var(--accent); }
+  .key-input-wrap input::placeholder { color: var(--text-dim); }
+  .key-toggle {
+    position: absolute; right: 8px;
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 16px; padding: 4px;
+  }
+  .key-toggle:hover { color: var(--text); }
+
+  /* 文本输入 */
+  textarea, input[type="text"] {
+    width: 100%; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-size: 13px; outline: none; transition: border-color .2s;
+    resize: vertical;
+  }
+  textarea:focus, input[type="text"]:focus { border-color: var(--accent); }
+  textarea::placeholder, input[type="text"]::placeholder { color: var(--text-dim); }
+  textarea.prompt-input { min-height: 80px; max-height: 200px; line-height: 1.5; }
+
+  /* 尺寸选择器 */
+  .size-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  }
+  .size-btn {
+    padding: 8px 4px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--glass-border);
+    color: var(--text-dim); font-size: 11px; cursor: pointer;
+    transition: all .2s; text-align: center; line-height: 1.3;
+  }
+  .size-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .size-btn.active {
+    background: var(--accent-glow); border-color: rgba(56,189,248,0.3);
+    color: var(--accent); font-weight: 600;
+  }
+  .size-btn .ratio { font-size: 13px; font-weight: 500; }
+  .size-btn .px { font-size: 10px; opacity: 0.6; }
+
+  /* 数量选择 */
+  .n-selector {
+    display: flex; gap: 6px;
+  }
+  .n-btn {
+    width: 40px; height: 36px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--glass-border);
+    color: var(--text-dim); font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all .2s; display: flex;
+    align-items: center; justify-content: center;
+  }
+  .n-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .n-btn.active {
+    background: var(--accent-glow); border-color: rgba(56,189,248,0.3);
+    color: var(--accent);
+  }
+
+  /* 格式选择 */
+  .format-selector { display: flex; gap: 8px; }
+  .format-btn {
+    padding: 8px 14px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--glass-border);
+    color: var(--text-dim); font-size: 12px; cursor: pointer;
+    transition: all .2s;
+  }
+  .format-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .format-btn.active {
+    background: var(--accent-glow); border-color: rgba(56,189,248,0.3);
+    color: var(--accent); font-weight: 600;
+  }
+
+  /* 生成按钮 */
+  .gen-btn {
+    width: 100%; padding: 12px; margin-top: 8px;
+    border-radius: var(--radius-sm); border: none;
+    background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+    color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all .2s; letter-spacing: 0.5px;
+  }
+  .gen-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .gen-btn:active { transform: translateY(0); }
+  .gen-btn:disabled {
+    opacity: 0.5; cursor: not-allowed; filter: none; transform: none;
+  }
+  .gen-btn.loading {
+    background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+    animation: pulse-bg 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-bg {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* 右侧结果区 */
+  .result-panel { padding: 20px; min-height: 400px; display: flex; flex-direction: column; }
+  .result-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .result-header h3 {
+    font-size: 14px; font-weight: 600; color: var(--text-dim);
+  }
+  .result-header .clear-btn {
+    font-size: 12px; color: var(--text-dim); background: none;
+    border: 1px solid var(--glass-border); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; transition: all .2s;
+  }
+  .result-header .clear-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
+
+  .result-area {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+  }
+  .result-area.empty-state .empty-icon {
+    font-size: 48px; color: rgba(100,116,139,0.3); margin-bottom: 8px;
+  }
+  .result-area.empty-state .empty-text {
+    font-size: 14px; color: var(--text-dim); text-align: center;
+  }
+
+  .result-area.has-images {
+    display: grid; gap: 12px; align-items: start; justify-content: center;
+    width: 100%;
+  }
+  .result-area.has-images.grid-1 { grid-template-columns: 1fr; }
+  .result-area.has-images.grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .result-area.has-images.grid-4 { grid-template-columns: repeat(2, 1fr); }
+
+  .img-card {
+    position: relative; border-radius: var(--radius);
+    overflow: hidden; background: var(--surface);
+    border: 1px solid var(--glass-border);
+    cursor: pointer; transition: transform .2s;
+  }
+  .img-card:hover { transform: scale(1.02); }
+  .img-card img {
+    width: 100%; display: block; object-fit: contain;
+    max-height: 520px;
+  }
+  .img-card .img-actions {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 8px 12px; display: flex; align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    opacity: 0; transition: opacity .2s;
+  }
+  .img-card:hover .img-actions { opacity: 1; }
+  .img-card .img-actions .img-size {
+    font-size: 11px; color: rgba(255,255,255,0.7);
+  }
+  .img-card .img-actions .save-btn {
+    font-size: 12px; color: #fff; background: rgba(255,255,255,0.15);
+    border: none; border-radius: 6px; padding: 4px 10px;
+    cursor: pointer; transition: background .2s;
+  }
+  .img-card .img-actions .save-btn:hover { background: rgba(255,255,255,0.25); }
+
+  /* 日志面板 */
+  .log-panel {
+    margin-top: 20px; padding: 16px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: var(--radius); backdrop-filter: blur(20px);
+  }
+  .log-panel h4 {
+    font-size: 13px; color: var(--text-dim); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .log-entries {
+    max-height: 120px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
+  }
+  .log-entry {
+    font-size: 12px; padding: 4px 0; color: var(--text-dim);
+    display: flex; gap: 8px; line-height: 1.5;
+  }
+  .log-entry .time { color: rgba(100,116,139,0.5); min-width: 60px; }
+  .log-entry.success { color: var(--success); }
+  .log-entry.error { color: var(--danger); }
+  .log-entry.pending { color: var(--accent); }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 20px; right: 20px; z-index: 9999;
+    padding: 12px 20px; border-radius: var(--radius-sm);
+    background: rgba(15,23,42,0.95); border: 1px solid var(--glass-border);
+    color: var(--text); font-size: 13px;
+    backdrop-filter: blur(20px);
+    transform: translateX(120%); transition: transform .3s ease;
+  }
+  .toast.show { transform: translateX(0); }
+  .toast.error { border-color: rgba(239,68,68,0.3); color: var(--danger); }
+  .toast.success { border-color: rgba(34,197,94,0.3); color: var(--success); }
+
+  /* 预览大图遮罩 */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 9998;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+    display: none; align-items: center; justify-content: center;
+    cursor: zoom-out;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 92vw; max-height: 90vh; object-fit: contain; }
+
+  /* 保存中状态 */
+  .saving-overlay {
+    position: fixed; inset: 0; z-index: 9997;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px;
+  }
+  .saving-overlay.show { display: flex; }
+  .saving-overlay .spinner {
+    width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .saving-overlay .text { font-size: 13px; color: var(--text-dim); }
+
+/* 目录选择行 */
+  .dir-row { display: flex; gap: 8px; }
+  .dir-row input {
+    flex: 1; padding: 8px 10px;
+    background: var(--surface); border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm); color: var(--text-dim);
+    font-size: 12px; cursor: default;
+  }
+  .dir-btn {
+    padding: 8px 12px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--glass-border);
+    color: var(--text-dim); font-size: 12px; cursor: pointer;
+    transition: all .2s;
+  }
+  .dir-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+  /* 响应式 */
+  @media (max-width: 800px) {
+    .main { grid-template-columns: 1fr; }
+    .size-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 顶栏 -->
+  <div class="header">
+    <div class="header-title">
+      SenseNova U1 Fast <span class="badge">API</span>
+    </div>
+    <div class="quota-info">
+      <span class="dot"></span>
+      1,500 次 / 5小时 · 仅消耗调用次数
+    </div>
+  </div>
+
+  <!-- 主体 -->
+  <div class="main">
+    <!-- 左侧参数面板 -->
+    <div class="panel params-panel">
+      <h3>参数配置</h3>
+
+      <!-- API Key -->
+      <div class="param-group">
+        <div class="param-label">API Key <span class="hint">sk-xxx</span></div>
+        <div class="key-input-wrap">
+          <input type="password" id="apiKey" placeholder="输入你的 SenseNova API Key" autocomplete="off" spellcheck="false">
+          <button class="key-toggle" onclick="toggleKeyVisibility()" title="显示/隐藏">👁</button>
+        </div>
+      </div>
+
+      <!-- Prompt -->
+      <div class="param-group">
+        <div class="param-label">提示词 <span class="hint">最长 4096 tokens</span></div>
+        <textarea id="prompt" class="prompt-input" placeholder="描述你想生成的图片...&#10;支持中英文，信息图/海报/插画均可"></textarea>
+      </div>
+
+      <!-- 尺寸 -->
+      <div class="param-group">
+        <div class="param-label">图片尺寸 <span class="hint">2K 固定分辨率</span></div>
+        <div class="size-grid" id="sizeGrid"></div>
+      </div>
+
+      <!-- 数量 -->
+      <div class="param-group">
+        <div class="param-label">生成数量 <span class="hint">n = 1~4</span></div>
+        <div class="n-selector" id="nSelector"></div>
+      </div>
+
+      <!-- 返回格式 -->
+      <div class="param-group">
+        <div class="param-label">返回格式 <span class="hint">Base64 可自动保存到本地</span></div>
+        <div class="format-selector" id="formatSelector"></div>
+      </div>
+
+      <!-- 保存目录 -->
+      <div class="param-group">
+        <div class="param-label">保存目录 <span class="hint">选择一次后自动记住</span></div>
+        <div class="dir-row">
+          <input type="text" id="dirDisplay" readonly placeholder="未设置，点击右侧选择...">
+          <button class="dir-btn" onclick="pickDir()">选择目录</button>
+        </div>
+      </div>
+
+      <!-- 生成按钮 -->
+      <button class="gen-btn" id="genBtn" onclick="generate()">生成图片</button>
+    </div>
+
+    <!-- 右侧结果区 -->
+    <div class="panel result-panel">
+      <div class="result-header">
+        <h3>生成结果</h3>
+        <button class="clear-btn" onclick="clearResults()">清空</button>
+      </div>
+      <div class="result-area empty-state" id="resultArea">
+        <div class="empty-icon">◇</div>
+        <div class="empty-text">输入提示词，点击生成<br>每次调用精准可控</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="log-panel">
+    <h4>⟩ 调用日志</h4>
+    <div class="log-entries" id="logEntries"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="">
+</div>
+<!-- Saving overlay -->
+<div class="saving-overlay" id="savingOverlay">
+  <div class="spinner"></div>
+  <div class="text">正在保存...</div>
+</div>
+
+<script>
+// ── 尺寸数据：11 种 2K 宽高比 ──
+const SIZES = [
+  { label: '1:1',  w: 2048, h: 2048 },
+  { label: '4:3',  w: 2048, h: 1536 },
+  { label: '3:4',  w: 1536, h: 2048 },
+  { label: '3:2',  w: 2048, h: 1365 },
+  { label: '2:3',  w: 1365, h: 2048 },
+  { label: '16:9', w: 2752, h: 1536 },
+  { label: '9:16', w: 1536, h: 2752 },
+  { label: '21:9', w: 2752, h: 1179 },
+  { label: '9:21', w: 1179, h: 2752 },
+  { label: '4:5',  w: 2048, h: 2560 },
+  { label: '5:4',  w: 2560, h: 2048 },
+];
+
+const BASE_URL = 'https://token.sensenova.cn/v1';
+
+// ── 状态 ──
+let currentSize = SIZES[5]; // 默认 16:9 (2752x1536) — 官方默认
+let currentN = 1;
+let currentFormat = 'b64_json'; // url | b64_json — 默认 b64_json 以支持自动本地保存
+let isGenerating = false;
+let generatedImages = []; // { url, b64, size, prompt }
+let saveDirHandle = null; // File System Access API 目录句柄
+
+// ── 初始化尺寸按钮 ──
+function initSizeGrid() {
+  const grid = document.getElementById('sizeGrid');
+  SIZES.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'size-btn' + (s === currentSize ? ' active' : '');
+    btn.innerHTML = `<span class="ratio">${s.label}</span><br><span class="px">${s.w}×${s.h}</span>`;
+    btn.onclick = () => selectSize(i);
+    grid.appendChild(btn);
+  });
+}
+
+function selectSize(idx) {
+  currentSize = SIZES[idx];
+  document.querySelectorAll('.size-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+}
+
+// ── 初始化数量按钮 ──
+function initNSelector() {
+  const sel = document.getElementById('nSelector');
+  for (let i = 1; i <= 4; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'n-btn' + (i === currentN ? ' active' : '');
+    btn.textContent = i;
+    btn.onclick = () => selectN(i);
+    sel.appendChild(btn);
+  }
+}
+
+function selectN(n) {
+  currentN = n;
+  document.querySelectorAll('.n-btn').forEach((b, i) => {
+    b.classList.toggle('active', i + 1 === n);
+  });
+}
+
+// ── 初始化格式按钮 ──
+function initFormatSelector() {
+  const sel = document.getElementById('formatSelector');
+  ['url', 'b64_json'].forEach(f => {
+    const btn = document.createElement('button');
+    btn.className = 'format-btn' + (f === currentFormat ? ' active' : '');
+    btn.textContent = f === 'url' ? 'URL' : 'Base64';
+    btn.onclick = () => selectFormat(f);
+    sel.appendChild(btn);
+  });
+}
+
+function selectFormat(f) {
+  currentFormat = f;
+  document.querySelectorAll('.format-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === (f === 'url' ? 'URL' : 'Base64'));
+  });
+  // 如果切换到 url 且没有目录句柄，提示建议用 b64_json
+  if (f === 'url' && !saveDirHandle) {
+    showToast('URL 模式无法自动保存到本地目录，建议用 Base64', '');
+  }
+}
+
+// ── API Key 显隐 ──
+function toggleKeyVisibility() {
+  const input = document.getElementById('apiKey');
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+// ── 生成 ──
+async function generate() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const prompt = document.getElementById('prompt').value.trim();
+
+  if (!apiKey) { showToast('请输入 API Key', 'error'); return; }
+  if (!prompt) { showToast('请输入提示词', 'error'); return; }
+  if (isGenerating) return;
+
+  isGenerating = true;
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = '生成中...';
+
+  const sizeStr = `${currentSize.w}x${currentSize.h}`;
+  const body = {
+    model: 'sensenova-u1-fast',
+    prompt: prompt,
+    size: sizeStr,
+    n: currentN,
+    response_format: currentFormat,
+  };
+
+  addLog(`POST /images/generations · prompt="${prompt.substring(0, 40)}..." · size=${sizeStr} · n=${currentN}`, 'pending');
+
+  try {
+    const res = await fetch(`${BASE_URL}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      const errMsg = errData?.error?.message || `HTTP ${res.status}`;
+      addLog(`错误: ${errMsg}`, 'error');
+      showToast(errMsg, 'error');
+      throw new Error(errMsg);
+    }
+
+    const data = await res.json();
+    const images = data.data || [];
+    addLog(`成功 · 返回 ${images.length} 张图片`, 'success');
+
+    images.forEach(img => {
+      generatedImages.push({
+        url: img.url || null,
+        b64: img.b64_json || null,
+        size: sizeStr,
+        prompt: prompt,
+      });
+    });
+
+    renderResults();
+    // 自动保存到本地目录
+    if (saveDirHandle && currentFormat === 'b64_json') {
+      await autoSaveAll(images, prompt);
+    }
+    showToast(`生成 ${images.length} 张图片${saveDirHandle ? ' · 已自动保存' : ''}`, 'success');
+  } catch (err) {
+    // 已在上面处理
+  } finally {
+    isGenerating = false;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = '生成图片';
+  }
+}
+
+// ── 渲染结果 ──
+function renderResults() {
+  const area = document.getElementById('resultArea');
+  if (generatedImages.length === 0) {
+    area.className = 'result-area empty-state';
+    area.innerHTML = `<div class="empty-icon">◇</div><div class="empty-text">输入提示词，点击生成<br>每次调用精准可控</div>`;
+    return;
+  }
+
+  const n = generatedImages.length;
+  let gridClass = 'grid-1';
+  if (n === 2) gridClass = 'grid-2';
+  if (n >= 4) gridClass = 'grid-4';
+
+  area.className = `result-area has-images ${gridClass}`;
+  area.innerHTML = '';
+
+  generatedImages.forEach((img, idx) => {
+    const card = document.createElement('div');
+    card.className = 'img-card';
+
+    const imgEl = document.createElement('img');
+    if (img.url) {
+      imgEl.src = img.url;
+      imgEl.crossOrigin = 'anonymous';
+    } else if (img.b64) {
+      imgEl.src = `data:image/png;base64,${img.b64}`;
+    }
+
+    imgEl.onclick = () => openLightbox(img.url || `data:image/png;base64,${img.b64}`);
+
+    const actions = document.createElement('div');
+    actions.className = 'img-actions';
+    actions.innerHTML = `
+      <span class="img-size">${img.size}</span>
+      <button class="save-btn" onclick="saveImage(${idx})">${saveDirHandle ? '另存为' : '保存'}</button>
+    `;
+
+    card.appendChild(imgEl);
+    card.appendChild(actions);
+    area.appendChild(card);
+  });
+}
+
+// ── Lightbox ──
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+
+// ── 选择保存目录 (File System Access API) ──
+async function pickDir() {
+  if (!window.showDirectoryPicker) {
+    showToast('当前浏览器不支持目录选择，请用 Chrome/Edge', 'error');
+    return;
+  }
+  try {
+    saveDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    // 验证写权限
+    const testFile = await saveDirHandle.getFileHandle('.permission_test', { create: true });
+    const writable = await testFile.createWritable();
+    await writable.write('ok');
+    await writable.close();
+    await saveDirHandle.removeEntry('.permission_test');
+    
+    document.getElementById('dirDisplay').value = saveDirHandle.name;
+    localStorage.setItem('sensenova_save_dir_name', saveDirHandle.name);
+    showToast(`保存目录: ${saveDirHandle.name}`, 'success');
+  } catch (err) {
+    saveDirHandle = null;
+    showToast('目录选择失败: ' + err.message, 'error');
+  }
+}
+
+// ── 自动保存所有图片到目录 ──
+async function autoSaveAll(images, prompt) {
+  const prefix = prompt.substring(0, 20).replace(/[\s\\/:*?"<>|]/g, '_');
+  const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false }).replace(/:/g, '');
+  
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    const fileName = `${prefix}_${timestamp}_${i + 1}.png`;
+    
+    try {
+      const fileHandle = await saveDirHandle.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      
+      if (img.b64_json) {
+        const binary = atob(img.b64_json);
+        const bytes = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+        await writable.write(bytes);
+      } else if (img.url) {
+        const res = await fetch(img.url, { mode: 'cors' });
+        const blob = await res.blob();
+        await writable.write(blob);
+      }
+      
+      await writable.close();
+      addLog(`自动保存: ${fileName}`, 'success');
+    } catch (err) {
+      addLog(`自动保存失败: ${fileName} — ${err.message}`, 'error');
+    }
+  }
+}
+
+// ── 保存图片（手动另存为） ──
+async function saveImage(idx) {
+  const img = generatedImages[idx];
+  if (!img) return;
+
+  const overlay = document.getElementById('savingOverlay');
+  overlay.classList.add('show');
+
+  try {
+    let blob;
+    if (img.url) {
+      const res = await fetch(img.url, { mode: 'cors' });
+      blob = await res.blob();
+    } else if (img.b64) {
+      const binary = atob(img.b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      blob = new Blob([bytes], { type: 'image/png' });
+    }
+
+    // 尝试使用 File System Access API 保存到用户选择的位置
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: `u1_${img.prompt.substring(0,20).replace(/[^\w\u4e00-\u9fff]/g,'_')}_${idx + 1}.png`,
+        types: [{ description: 'PNG 图片', accept: { 'image/png': ['.png'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      showToast('保存成功', 'success');
+    } else {
+      // 回退：下载方式
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `u1_${idx + 1}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('已触发下载', 'success');
+    }
+  } catch (err) {
+    showToast('保存失败: ' + err.message, 'error');
+  } finally {
+    overlay.classList.remove('show');
+  }
+}
+
+// ── 清空 ──
+function clearResults() {
+  generatedImages = [];
+  renderResults();
+}
+
+// ── 日志 ──
+function addLog(msg, type = '') {
+  const entries = document.getElementById('logEntries');
+  const now = new Date();
+  const time = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.innerHTML = `<span class="time">${time}</span><span>${msg}</span>`;
+  entries.appendChild(entry);
+  entries.scrollTop = entries.scrollHeight;
+}
+
+// ── Toast ──
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── 键盘快捷键 ──
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeLightbox();
+  if (e.ctrlKey && e.key === 'Enter') generate();
+});
+
+// ── 本地持久化 ──
+function loadState() {
+  const savedKey = localStorage.getItem('sensenova_api_key');
+  if (savedKey) document.getElementById('apiKey').value = savedKey;
+  const savedPrompt = localStorage.getItem('sensenova_prompt');
+  if (savedPrompt) document.getElementById('prompt').value = savedPrompt;
+  const savedDirName = localStorage.getItem('sensenova_save_dir_name');
+  if (savedDirName) document.getElementById('dirDisplay').value = savedDirName + ' (需重新选择以恢复写权限)';
+}
+
+function saveState() {
+  localStorage.setItem('sensenova_api_key', document.getElementById('apiKey').value.trim());
+  localStorage.setItem('sensenova_prompt', document.getElementById('prompt').value.trim());
+}
+
+// 自动保存
+document.getElementById('apiKey').addEventListener('input', saveState);
+document.getElementById('prompt').addEventListener('input', saveState);
+
+// ── 启动 ──
+initSizeGrid();
+initNSelector();
+initFormatSelector();
+loadState();
+
+// 提示：File System Access API 目录句柄在页面刷新后需重新授权
+// localStorage 只记名字，handle 本身无法持久化
+</script>
+</body>
+</html>
