@@ -403,7 +403,7 @@
 
       <!-- 保存目录 -->
       <div class="param-group">
-        <div class="param-label">保存目录 <span class="hint">选择一次后自动记住</span></div>
+        <div class="param-label">保存目录 <span class="hint">自动记住，刷新后无需重新选择</span></div>
         <div class="dir-row">
           <input type="text" id="dirDisplay" readonly placeholder="未设置，点击右侧选择...">
           <button class="dir-btn" onclick="pickDir()">选择目录</button>
@@ -665,6 +665,51 @@ function closeLightbox() {
   document.getElementById('lightbox').classList.remove('open');
 }
 
+// ── IndexedDB: 持久化目录句柄 ──
+function openDirDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('sensenova_fsa_db', 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('handles')) {
+        db.createObjectStore('handles');
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function storeDirHandle(handle) {
+  const db = await openDirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'dir');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function restoreDirHandle() {
+  const db = await openDirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readonly');
+    const req = tx.objectStore('handles').get('dir');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function clearDirHandle() {
+  const db = await openDirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').delete('dir');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 // ── 选择保存目录 (File System Access API) ──
 async function pickDir() {
   if (!window.showDirectoryPicker) {
@@ -673,18 +718,22 @@ async function pickDir() {
   }
   try {
     saveDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-    // 验证写权限
+    // 验证写权限并确认
+    await saveDirHandle.requestPermission({ mode: 'readwrite' });
     const testFile = await saveDirHandle.getFileHandle('.permission_test', { create: true });
     const writable = await testFile.createWritable();
     await writable.write('ok');
     await writable.close();
     await saveDirHandle.removeEntry('.permission_test');
-    
+
+    // 持久化到 IndexedDB，刷新后自动恢复
+    await storeDirHandle(saveDirHandle);
+
     document.getElementById('dirDisplay').value = saveDirHandle.name;
-    localStorage.setItem('sensenova_save_dir_name', saveDirHandle.name);
-    showToast(`保存目录: ${saveDirHandle.name}`, 'success');
+    showToast(`保存目录: ${saveDirHandle.name} · 已记住，刷新无需重选`, 'success');
   } catch (err) {
     saveDirHandle = null;
+    await clearDirHandle();
     showToast('目录选择失败: ' + err.message, 'error');
   }
 }
@@ -801,23 +850,115 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ── 本地持久化 ──
+const STORAGE_KEYS = {
+  API_KEY: 'sensenova_api_key',
+  PROMPT: 'sensenova_prompt',
+  SIZE_INDEX: 'sensenova_size_index',
+  N_VALUE: 'sensenova_n_value',
+  FORMAT: 'sensenova_format',
+};
+
 function loadState() {
-  const savedKey = localStorage.getItem('sensenova_api_key');
+  // API Key
+  const savedKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
   if (savedKey) document.getElementById('apiKey').value = savedKey;
-  const savedPrompt = localStorage.getItem('sensenova_prompt');
+  
+  // Prompt（可选恢复）
+  const savedPrompt = localStorage.getItem(STORAGE_KEYS.PROMPT);
   if (savedPrompt) document.getElementById('prompt').value = savedPrompt;
-  const savedDirName = localStorage.getItem('sensenova_save_dir_name');
-  if (savedDirName) document.getElementById('dirDisplay').value = savedDirName + ' (需重新选择以恢复写权限)';
+  
+  // 尺寸选择
+  const savedSizeIndex = localStorage.getItem(STORAGE_KEYS.SIZE_INDEX);
+  if (savedSizeIndex !== null) {
+    const idx = parseInt(savedSizeIndex, 10);
+    if (idx >= 0 && idx < SIZES.length) {
+      selectSize(idx);
+    }
+  }
+  
+  // 生成数量
+  const savedN = localStorage.getItem(STORAGE_KEYS.N_VALUE);
+  if (savedN !== null) {
+    const n = parseInt(savedN, 10);
+    if (n >= 1 && n <= 4) {
+      selectN(n);
+    }
+  }
+  
+  // 返回格式
+  const savedFormat = localStorage.getItem(STORAGE_KEYS.FORMAT);
+  if (savedFormat && (savedFormat === 'url' || savedFormat === 'b64_json')) {
+    selectFormat(savedFormat);
+  }
+  
+  // 从 IndexedDB 恢复目录句柄
+  restoreDirHandle().then(async (handle) => {
+    if (!handle) return;
+    // 检查权限状态
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      saveDirHandle = handle;
+      document.getElementById('dirDisplay').value = handle.name;
+      addLog(`已恢复保存目录: ${handle.name}`, 'success');
+    } else if (perm === 'prompt') {
+      // 需要用户重新点击授权，浏览器会弹窗
+      try {
+        await handle.requestPermission({ mode: 'readwrite' });
+        saveDirHandle = handle;
+        document.getElementById('dirDisplay').value = handle.name;
+        addLog(`已恢复保存目录: ${handle.name}`, 'success');
+      } catch {
+        // 用户拒绝，清除旧句柄
+        await clearDirHandle();
+      }
+    } else {
+      // denied — 清除
+      await clearDirHandle();
+    }
+  }).catch(() => {
+    // IndexedDB 不可用，静默
+  });
 }
 
 function saveState() {
-  localStorage.setItem('sensenova_api_key', document.getElementById('apiKey').value.trim());
-  localStorage.setItem('sensenova_prompt', document.getElementById('prompt').value.trim());
+  localStorage.setItem(STORAGE_KEYS.API_KEY, document.getElementById('apiKey').value.trim());
+  localStorage.setItem(STORAGE_KEYS.PROMPT, document.getElementById('prompt').value.trim());
 }
 
-// 自动保存
+function saveSizeState(idx) {
+  localStorage.setItem(STORAGE_KEYS.SIZE_INDEX, idx.toString());
+}
+
+function saveNState(n) {
+  localStorage.setItem(STORAGE_KEYS.N_VALUE, n.toString());
+}
+
+function saveFormatState(fmt) {
+  localStorage.setItem(STORAGE_KEYS.FORMAT, fmt);
+}
+
+// 自动保存输入框
 document.getElementById('apiKey').addEventListener('input', saveState);
 document.getElementById('prompt').addEventListener('input', saveState);
+
+// 重写选择函数以包含持久化
+const originalSelectSize = selectSize;
+selectSize = function(idx) {
+  originalSelectSize(idx);
+  saveSizeState(idx);
+};
+
+const originalSelectN = selectN;
+selectN = function(n) {
+  originalSelectN(n);
+  saveNState(n);
+};
+
+const originalSelectFormat = selectFormat;
+selectFormat = function(f) {
+  originalSelectFormat(f);
+  saveFormatState(f);
+};
 
 // ── 启动 ──
 initSizeGrid();
@@ -825,8 +966,6 @@ initNSelector();
 initFormatSelector();
 loadState();
 
-// 提示：File System Access API 目录句柄在页面刷新后需重新授权
-// localStorage 只记名字，handle 本身无法持久化
 </script>
 </body>
 </html>
